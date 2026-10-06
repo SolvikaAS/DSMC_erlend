@@ -1,0 +1,609 @@
+#include <iostream>
+#include <stdio.h>
+#include <string.h>
+#include <math.h>
+#include <time.h>
+
+#include "BRNG.cxx"
+#include "DiscreteUniformRNG.cxx"
+#include "PoissonRNG.cxx"
+#include "RayleighRNG.cxx"
+#include "IsotropicVectorRNG.cxx"
+#include "Gamma.cxx"
+
+#define MAX_PCL_IN_CELL 1000
+#define MAX_CELL_X 200
+#define MAX_CELL_Y 200
+#define DIM 2
+#define MAX_PCL 1000000
+
+#define M_PI                    3.14159265358979323846
+#define BOLTZMANN_CONSTANT      1.380662E-23                    // Boltzmann constant (J/K) 
+#define AVOGADRO_CONSTANT       6.022045E+23                    // Avogadro constant (1/mole)
+#define UNIT_DALTON             1.66056e-27                     // Atomic mass unit, Dalton (kg)
+
+double Dt = 1.0e-06;
+int NStep = 100000;
+int FirstSamplingStep = 10000;
+int SamplingPeriod = 1;
+int PrintPeriod = 10000;
+double X1 = -20.0;
+double X2 = 20.0;
+double Y1 = -20.0;
+double Y2 = 20.0;
+double DZ = 0.1;
+int NX = 100;
+int NY = 100;
+double NPCFree = 10;
+double DL = 0.1;
+double MolarMass = 0.040;
+double MaFree = 4;
+double PFree = 0.1;
+double TFree = 200;
+double SphereX = 0.0;
+double SphereY = 0.0;
+double SphereRadius = 3;
+double AttackAngle = 0;
+double Tw = 300.0;
+double Omega;
+double SigmaRef;
+double CrRef;
+double MFTFree;
+double MFPFree;
+double KnFree;
+double DRef = 4.17e-10;
+double ViscosityIndex = 0.81;
+double Tref = 273.0;
+double DragForce = 0;
+double DragForceSum = 0;
+int DragSamples =0;
+double DragImpulse = 0;
+long long DragCollisionCount = 0;
+double DragImpulseTotal = 0.0;
+
+
+typedef struct pcl {
+	double X[DIM];
+	double V[3];
+} PCL;
+
+
+typedef struct cell { //////////////////////////////////////////////////////////////////////
+                double  CountNP;                // Particle number -> Number density
+                double  CountV[3];              // Velocity vector V -> Macroscopic gas velocity
+                double  CountVV[3][3];          // Velocity tensor V x V -> Stress tensor
+                double  CountV2V[3];            // Vector of V^2 * V -> Heat flux vector
+                double  CountNC;                // Collsion number -> Collsion frequency, M.F.T. and M.F.P.
+} CELL;
+
+
+
+
+
+int SampleStep;
+CELL C[MAX_CELL_X][MAX_CELL_Y];
+#define sqr3( V ) ( V[0] * V[0] + V[1] * V[1] + V[2] * V[2] )
+
+
+int NP;
+PCL P[MAX_PCL];
+
+
+
+double DX, DY;
+double DV;
+double Weight;
+double MoleculeMass;
+
+double NFree;
+double UFree;
+double UxFree, UyFree;
+
+int NPC[MAX_CELL_X][MAX_CELL_Y];
+int IPC[MAX_CELL_X][MAX_CELL_Y][MAX_PCL_IN_CELL];
+
+void Setup(){
+	MoleculeMass =MolarMass/AVOGADRO_CONSTANT;
+	NFree= PFree/(BOLTZMANN_CONSTANT*TFree);
+	UFree = MaFree*sqrt((5.0/3.0)*BOLTZMANN_CONSTANT*TFree/MoleculeMass);
+	UxFree =UFree*cos(M_PI*AttackAngle/180.0);
+	UyFree =-UFree*sin(M_PI*AttackAngle/180.0);
+	DX = (X2-X1)/NX;
+	DY = (Y2-Y1)/NY;
+	DV=DX*DY*DZ;
+	Weight = DV*NFree/NPCFree;
+	SigmaRef= M_PI*DRef*DRef;
+	Omega = 2.0*ViscosityIndex-1.0;
+	CrRef = sqrt(4.0*BOLTZMANN_CONSTANT*Tref/MoleculeMass)/pow(Gamma(2.5-ViscosityIndex),1.0/Omega);
+
+
+}
+
+void Indexing (){
+	memset (NPC,0,sizeof NPC);
+	for(int i=0;i<NP; i++){
+		int k = int((P[i].X[0]-X1)/DX);
+		int l = int((P[i].X[1]-Y1)/DY);
+
+		if (k < 0 || k >= NX || l < 0 || l >= NY)
+        	{
+            std::cerr << "ERROR: Particle outside indexing domain\n";
+            std::cerr << "particle = " << i << '\n';
+            std::cerr << "x = " << P[i].X[0] << '\n';
+            std::cerr << "y = " << P[i].X[1] << '\n';
+            std::cerr << "k = " << k << '\n';
+            std::cerr << "l = " << l << '\n';
+            std::exit(1);
+        }
+
+        if (NPC[k][l] >= MAX_PCL_IN_CELL)
+        {
+            std::cerr << "ERROR: Too many particles in cell\n";
+            std::cerr << "k = " << k << '\n';
+            std::cerr << "l = " << l << '\n';
+            std::cerr << "NPC = " << NPC[k][l] << '\n';
+            std::exit(1);
+        }
+
+		IPC[k][l][NPC[k][l]++]=i;
+	}
+}
+
+
+double SampleTime;
+
+void Sampling () ////////////////////////////////////////////////////////////////////////////
+        {
+                SampleStep++;
+                SampleTime += Dt;
+                for ( int k = 0; k < NX; k++ )
+                        for ( int l = 0; l < NY; l++ ) 
+                                for ( int i = 0; i < NPC[k][l]; i++ ) {
+                                        C[k][l].CountNP += 1.0;
+                                        double V2 = sqr3 ( P[IPC[k][l][i]].V );
+                                        for ( int m = 0; m < 3; m++ ) {
+                                                C[k][l].CountV[m] += P[IPC[k][l][i]].V[m];
+                                                C[k][l].CountV2V[m] += V2 * P[IPC[k][l][i]].V[m];
+                                                for ( int n = 0; n < 3; n++ )
+                                                        C[k][l].CountVV[m][n] += P[IPC[k][l][i]].V[m] * P[IPC[k][l][i]].V[n];
+                                        }
+                        }
+        }
+
+
+
+
+void Printing () ////////////////////////////////////////////////////////////////////////////
+        {
+        FILE    *F = fopen ( "DSMC2D_Field.plt", "wt" );
+                fprintf ( F, "VARIABLES = \"X\" \"Y\" \"N\" \"Ux\" \"Uy\" \"Tx\" \"Ty\" \"T\"\n" );
+                fprintf ( F, "ZONE I=%d J=%d\n", NX, NY );
+                for ( int k = 0; k < NX; k++ )
+                        for ( int l = 0; l < NY; l++ ) {
+                                double X = X1 + ( k + 0.5 ) * DX;
+                                double Y = Y1 + ( l + 0.5 ) * DY;
+                                double N = Weight * C[k][l].CountNP / SampleStep / DV;  // Number density
+                                double U[3], Txyz[3];
+                                for ( int m = 0; m < 3; m++ ) {
+                                        U[m] = C[k][l].CountV[m] / C[k][l].CountNP; // Components of the macroscopic gas velocity vector
+                                        Txyz[m] = MoleculeMass * ( C[k][l].CountVV[m][m] / C[k][l].CountNP - U[m] * U[m] ) / BOLTZMANN_CONSTANT; // Temperature analogues characterizing energy of chaotic motion of a single degree of freedom
+                                }
+                                double T = ( Txyz[0] + Txyz[1] + Txyz[2] ) / 3.0; // Temperature
+                                fprintf ( F, "%18.10e %18.10e %18.10e %18.10e %18.10e %18.10e %18.10e %18.10e\n", X, Y, N, U[0], U[1], Txyz[0], Txyz[1], T );
+                        }
+                fclose ( F );
+	std::cout<<"printing \n";
+        }
+
+
+void v2rand_uniform_rect (double &X, double &Y, double a, double b, double c,double d){
+	X = a+(b-a)*brng();
+	Y = c+(d-c)*brng();
+}
+
+double frand_Gaussian (double E, double V){
+	return E+sqrt(-2.0*V*log(brng()))*cos(2.0*M_PI*brng());}
+
+void vrand_MB (double *v, double m,double *u,double T){
+	double RT = BOLTZMANN_CONSTANT*T/m;
+	v[0] = frand_Gaussian (u[0],RT);
+	v[1] = frand_Gaussian (u[1],RT);
+	v[2] = frand_Gaussian (u[2],RT);
+}
+
+
+void GenerateNewParticles (double X1, double Y1, double X2, double Y2,double Ngas,double Ugasx,
+			   double Ugasy,double Tgas, int MoveFlag){
+	double V = (X2-X1)*(Y2-Y1)*DZ;
+	double Nnew_avg = Ngas*V/Weight;
+	int Nnew;
+	if (Nnew_avg>20.0){
+		Nnew = int (Nnew_avg);
+		if (brng()<Nnew_avg-Nnew) Nnew++;
+	}
+	else {
+		Nnew = irand_Poisson (Nnew_avg);
+	}
+
+	if (NP + Nnew > MAX_PCL)
+    	{
+        std::cerr << "ERROR: Particle array capacity exceeded\n";
+        std::cerr << "NP = " << NP << '\n';
+        std::cerr << "Nnew = " << Nnew << '\n';
+        std::cerr << "MAX_PCL = " << MAX_PCL << '\n';
+        std::exit(1);
+    	}
+
+	double Ugas[3] = {Ugasx,Ugasy,0.0};
+	for (int i =NP; i<NP+Nnew;i++){
+		v2rand_uniform_rect(P[i].X[0],P[i].X[1],X1,X2,Y1,Y2);
+		vrand_MB (P[i].V,MoleculeMass,Ugas,Tgas);
+		if (MoveFlag ==1){
+			P[i].X[0] += Dt*P[i].V[0];
+			P[i].X[1] += Dt*P[i].V[1];
+		}
+	}
+	NP +=Nnew;
+}
+
+int Step;
+double Time;
+//double SampleTime;
+
+
+
+void BoundaryConditions(){
+
+	//std::cout << "NP before BC = " << NP << '\n';
+	GenerateNewParticles (X1-DL,Y1-DL,X1,Y2+DL,NFree,UxFree,UyFree,TFree,1);
+	GenerateNewParticles (X2,Y1,X2+DL,Y2+DL,NFree,UxFree,UyFree,TFree,1);
+	GenerateNewParticles (X1,Y1-DL,X2,Y1,NFree,UxFree,UyFree,TFree,1);
+	GenerateNewParticles (X1,Y2,X2,Y2+DL,NFree,UxFree,UyFree,TFree,1);
+	//std::cout << "NP after generation = " << NP << '\n';
+
+	for (int i=0;i<NP;){
+		if (P[i].X[0]<= X1||P[i].X[0]>=X2||P[i].X[1]<=Y1||P[i].X[1]>=Y2){
+			if(i<NP-1) memmove (&P[i],&P[NP-1],sizeof (PCL));
+			NP--;
+		}else{i++;}
+	}
+	//std::cout << "NP after removal = " << NP << '\n';
+}
+
+void DiffuseScattering(
+    double *v,
+    double m,
+    double Tw,
+    double Nx,
+    double Ny
+)
+{
+    double RTw = BOLTZMANN_CONSTANT * Tw / m;
+
+    // Normal velocity: molecules leave the wall
+    double Vn = frand_Rayleigh(sqrt(RTw));
+
+    // Tangential velocity
+    double Vt = frand_Gaussian(0.0, RTw);
+
+    // z component
+    double Vz = frand_Gaussian(0.0, RTw);
+
+    // Unit tangent perpendicular to the normal
+    double Tx = -Ny;
+    double Ty =  Nx;
+
+    // Transform local normal/tangential velocities
+    // back into global x-y coordinates
+    v[0] = Vn * Nx + Vt * Tx;
+    v[1] = Vn * Ny + Vt * Ty;
+    v[2] = Vz;
+}
+
+void MoveParticles()
+{
+    for (int i = 0; i < NP; i++)
+    {
+        // --------------------------------------------
+        // Old particle position
+        // --------------------------------------------
+
+        double X0 = P[i].X[0];
+        double Y0 = P[i].X[1];
+
+        // --------------------------------------------
+        // Proposed new particle position
+        // --------------------------------------------
+
+        double Xnew = X0 + Dt * P[i].V[0];
+        double Ynew = Y0 + Dt * P[i].V[1];
+
+        // Particle displacement during timestep
+        double dx = Xnew - X0;
+        double dy = Ynew - Y0;
+
+        // Vector from sphere center to old position
+        double fx = X0 - SphereX;
+        double fy = Y0 - SphereY;
+
+        // --------------------------------------------
+        // Line-circle intersection
+        //
+        // |P0 + t*d - C|^2 = R^2
+        //
+        // 0 <= t <= 1 means collision occurred
+        // during this timestep.
+        // --------------------------------------------
+
+        double a = dx*dx + dy*dy;
+        double b = 2.0 * (fx*dx + fy*dy);
+        double c = fx*fx + fy*fy
+                 - SphereRadius*SphereRadius;
+
+        double discriminant = b*b - 4.0*a*c;
+
+        bool collision = false;
+        double tHit = 1.0;
+
+        if (discriminant >= 0.0 && a > 0.0)
+        {
+            double sqrtD = sqrt(discriminant);
+
+            double t1 = (-b - sqrtD) / (2.0*a);
+            double t2 = (-b + sqrtD) / (2.0*a);
+
+            // First intersection encountered
+            if (t1 >= 0.0 && t1 <= 1.0)
+            {
+                tHit = t1;
+                collision = true;
+            }
+            else if (t2 >= 0.0 && t2 <= 1.0)
+            {
+                tHit = t2;
+                collision = true;
+            }
+        }
+
+        // --------------------------------------------
+        // No collision
+        // --------------------------------------------
+
+        if (!collision)
+        {
+            P[i].X[0] = Xnew;
+            P[i].X[1] = Ynew;
+            continue;
+        }
+
+        // --------------------------------------------
+        // Collision position
+        // --------------------------------------------
+
+        double Xhit = X0 + tHit * dx;
+        double Yhit = Y0 + tHit * dy;
+
+        // --------------------------------------------
+        // Surface normal
+        // --------------------------------------------
+
+        double Nx = (Xhit - SphereX) / SphereRadius;
+        double Ny = (Yhit - SphereY) / SphereRadius;
+
+        // Numerical normalization
+        double Nmag = sqrt(Nx*Nx + Ny*Ny);
+
+        Nx /= Nmag;
+        Ny /= Nmag;
+
+        // --------------------------------------------
+        // Diffuse reflection
+        // --------------------------------------------
+
+	double VxIn = P[i].V[0];
+	double VyIn = P[i].V[1];
+	double VzIn = P[i].V[2];
+
+        DiffuseScattering(
+            P[i].V,
+            MoleculeMass,
+            Tw,
+            Nx,
+            Ny
+        );
+
+	double VxOut = P[i].V[0];
+	DragImpulseTotal += Weight*MoleculeMass*(VxIn-VxOut);
+	DragCollisionCount++;
+
+        // --------------------------------------------
+        // Remaining fraction of timestep
+        // --------------------------------------------
+
+        double DtRemaining = Dt * (1.0 - tHit);
+
+        P[i].X[0] =
+            Xhit + DtRemaining * P[i].V[0];
+
+        P[i].X[1] =
+            Yhit + DtRemaining * P[i].V[1];
+
+        // Tiny displacement away from surface to avoid
+        // numerical re-collision at exactly R
+        constexpr double epsilon = 1e-12;
+
+        P[i].X[0] += epsilon * Nx;
+        P[i].X[1] += epsilon * Ny;
+    }
+}
+
+bool InsideSphere(double x, double y)
+{
+    double dx = x - SphereX;
+    double dy = y - SphereY;
+
+    return dx*dx + dy*dy
+           < SphereRadius*SphereRadius;
+}
+
+void RemoveParticlesInsideSphere()
+{
+    for (int i = 0; i < NP;)
+    {
+        if (InsideSphere(P[i].X[0], P[i].X[1]))
+        {
+            if (i < NP - 1)
+                P[i] = P[NP - 1];
+
+            NP--;
+        }
+        else
+        {
+            i++;
+        }
+    }
+}
+
+void ElasticCollision ( double *V1, double *V2, double Cr){
+	double N[3];
+	v3rand_isotropic (N);
+	Cr *=0.5;
+	double VC[3] = {0.5*(V2[0]+V1[0]),0.5*(V2[1]+V1[1]),0.5*(V2[2]+V1[2])};
+	double VCr[3] = {Cr*N[0],Cr*N[1],Cr*N[2]};
+	V1[0]=VC[0]+VCr[0];
+	V1[1]=VC[1]+VCr[1];
+	V1[2]=VC[2]+VCr[2];
+	V2[0]=VC[0]-VCr[0];
+	V2[1]=VC[1]-VCr[1];
+	V2[2]=VC[2]-VCr[2];
+}
+
+int BinaryCollisionsInCell (double CellVolume,int NPC,int *IPC){
+	if (NPC<2)return 0;
+	double SCMax = 9.0*SigmaRef*sqrt(BOLTZMANN_CONSTANT*TFree/MoleculeMass);
+	double Npair = 0.5*NPC*(NPC-1)*Weight*SCMax*Dt/CellVolume;
+	int NN=int (Npair);
+	double N1= Npair-NN;
+	NN =(brng()<N1)?NN+1:NN;
+	int i,j;
+	int NC=0;
+	for (int k=0; k<NN;k++){
+		i = irand_uniform(NPC);
+		do{j = irand_uniform(NPC);}while (j==i);
+		i = IPC[i];
+		j = IPC[j];
+		double VCr[3] = {P[j].V[0]-P[i].V[0],P[j].V[1]-P[i].V[1],P[j].V[2]-P[i].V[2]};
+		double Cr = sqrt(VCr[0]*VCr[0]+VCr[1]*VCr[1]+VCr[2]*VCr[2]);
+		double Sigma = SigmaRef*pow(CrRef/Cr, Omega);
+		if ( brng()<Sigma*Cr/SCMax){
+			ElasticCollision (P[i].V,P[j].V,Cr);
+			NC++;
+		}
+	}
+	return NC;
+}
+int SamplingMode;
+
+int CollideParticles () ////////////////////////////////////////////////////////////////////
+        {
+        int     NC = 0; // Counter of collisions
+                for ( int k = 0; k < NX; k++ )
+                        for ( int l = 0; l < NY; l++ ) { // Sampling of collisions in particle (i,j)
+                                int NCC = BinaryCollisionsInCell ( DV, NPC[k][l], IPC[k][l] ); // NCC is the number of collisions sampled in the current cell
+                                NC += NCC;
+                                // Here we update CountNC in the cell for fure calculations of the mean free time and path, if necessary
+                                if ( SamplingMode == 1 ) C[k][l].CountNC += NCC;
+                        }
+                return NC; // NC is the total number of real collsions sampled during the time step
+}
+
+void InitialConditions()
+{
+    Step = 0;
+    Time = 0.0;
+    NP = 0;
+
+    SampleStep = 0;
+    SampleTime = 0.0;
+
+    memset(C, 0, sizeof C);
+
+    GenerateNewParticles(
+        X1, Y1,
+        X2, Y2,
+        NFree,
+        UxFree,
+        UyFree,
+        TFree,
+        0
+    );
+
+    RemoveParticlesInsideSphere();
+}
+
+double DragSamplingStart = 0.0;
+double DragSamplingTime = 0.0;
+
+int  main()
+{
+time_t t;
+	SetSeed (unsigned (time (&t)),unsigned ( 362436069));
+
+	Setup();
+	std::cout<<"Setup \n";
+	InitialConditions();
+	std::cout<<"InitialConditions \n";
+	do {
+		if (Step > FirstSamplingStep && Step % SamplingPeriod ==0)
+			SamplingMode =1;
+		else
+			SamplingMode =0;
+		MoveParticles();
+		if(Step>FirstSamplingStep){
+			DragSamplingTime +=Dt;
+		}
+		//std::cout<<"moved \n";
+		BoundaryConditions();
+		//std::cout<<"boundary \n";
+		Indexing();
+		//std::cout<<"indexed \n";
+		int NC = CollideParticles();
+		if (SamplingMode ==1)
+		{
+		 Sampling();
+		}
+		Step++;
+		Time += Dt;
+		if ( Step % 100 == 0 ) printf ( "Time step %d, Number of particles %d, Number of collsions %d  \n", Step, NP, NC );
+		if (Step > FirstSamplingStep && Step % PrintPeriod ==0) Printing();
+	} while (Step < NStep);
+	Printing();
+
+	double MeanDrag =
+    DragImpulseTotal / DragSamplingTime;
+
+double RhoFree = NFree * MoleculeMass;
+double AreaRef = 2.0 * SphereRadius * DZ;
+
+double Cd =
+    MeanDrag /
+    (0.5 * RhoFree * UFree * UFree * AreaRef);
+
+std::cout << "\n";
+std::cout << "====================================\n";
+std::cout << "Sphere collisions = "
+          << DragCollisionCount << "\n";
+
+std::cout << "Sampling time = "
+          << DragSamplingTime << " s\n";
+
+std::cout << "Mean drag force = "
+          << MeanDrag << " N\n";
+
+std::cout << "Drag coefficient Cd = "
+          << Cd << "\n";
+
+std::cout << "====================================\n";
+
+return 0;
+}
