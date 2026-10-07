@@ -166,7 +166,7 @@ MFPFree = MeanMolecularSpeed * MFTFree;
 KnFree =
     MFPFree / (2.0 * SphereRadius);
 
-/*
+
 std::cout << "\n";
 std::cout << "Freestream properties\n";
 std::cout << "-----------------------------\n";
@@ -178,9 +178,8 @@ std::cout << "Kn_inf      = " << KnFree << "\n";
 std::cout << "DX / lambda = " << DX / MFPFree << "\n";
 std::cout << "DY / lambda = " << DY / MFPFree << "\n";
 std::cout << "Dt / MFT    = " << Dt / MFTFree << "\n";
-*/
-
 }
+
 void InitialConditions()
 {
     Step = 0;
