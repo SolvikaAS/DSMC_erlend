@@ -1,1 +1,0 @@
-/usr/bin/c++ -O3 -DNDEBUG -Wl,-rpath -Wl,/usr/lib64/openmpi/lib -Wl,--enable-new-dtags -Wl,--dependency-file=CMakeFiles/dsmc.dir/link.d CMakeFiles/dsmc.dir/src/main.cpp.o -o dsmc  -Wl,-rpath,/usr/lib64/openmpi/lib /usr/lib64/openmpi/lib/libmpi.so
