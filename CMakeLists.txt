@@ -11,6 +11,7 @@ find_package(MPI REQUIRED)
 add_executable(dsmc
     src/main.cpp
     src/Simulation.cpp
+    src/Initialization.cpp
     src/Collision.cpp
     src/Boundary.cpp
     src/Geometry.cpp

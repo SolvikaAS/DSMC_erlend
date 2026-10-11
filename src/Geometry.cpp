@@ -5,6 +5,32 @@
 
 #include "SimulationState.h"
 
+// Domain bounds and Cartesian grid settings.
+double X1 = -20.0;
+double X2 = 20.0;
+double Y1 = -20.0;
+double Y2 = 20.0;
+double DZ = 0.1;
+int NX = 100;
+int NY = 100;
+double DL = 0.1;
+
+// Circular obstacle geometry.
+double SphereX = 0.0;
+double SphereY = 0.0;
+double SphereRadius = 3;
+
+// Derived cell dimensions and volume, calculated during setup.
+double DX, DY;
+double DV;
+
+void SetupGeometry()
+{
+	DX = (X2-X1)/NX;
+	DY = (Y2-Y1)/NY;
+	DV=DX*DY*DZ;
+}
+
 void Indexing()
 {
     memset(NPC, 0, sizeof NPC);

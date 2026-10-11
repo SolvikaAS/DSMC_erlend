@@ -3,29 +3,20 @@
 #include <mpi.h>
 #include "Particle.h"
 #include "Cell.h"
+#include "Geometry.h"
 
-// Shared state for the existing procedural solver. Definitions live in Simulation.cpp.
+// Shared state for the existing procedural solver. Geometry is declared in Geometry.h;
+// the remaining definitions live in Initialization.cpp.
 extern double Dt;
 extern int NStep;
 extern int FirstSamplingStep;
 extern int SamplingPeriod;
 extern int PrintPeriod;
-extern double X1;
-extern double X2;
-extern double Y1;
-extern double Y2;
-extern double DZ;
-extern int NX;
-extern int NY;
 extern double NPCFree;
-extern double DL;
 extern double MolarMass;
 extern double MaFree;
 extern double NFree;
 extern double TFree;
-extern double SphereX;
-extern double SphereY;
-extern double SphereRadius;
 extern double AttackAngle;
 extern double Tw;
 extern double Omega;
@@ -70,8 +61,6 @@ extern int SampleStep;
 extern CELL C[MAX_CELL_X][MAX_CELL_Y];
 extern int NP;
 extern PCL P[MAX_PCL];
-extern double DX, DY;
-extern double DV;
 extern double Weight;
 extern double MoleculeMass;
 extern double PFree;

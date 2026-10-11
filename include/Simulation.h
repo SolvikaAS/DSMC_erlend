@@ -1,6 +1,4 @@
 #pragma once
 
-// Initialization and the simulation time loop.
-void Setup();
-void InitialConditions();
+// MPI lifecycle and the simulation time loop.
 int RunSimulation(int argc, char **argv);
