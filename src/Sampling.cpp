@@ -3,6 +3,8 @@
 #include <cstdio>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
+#include <iomanip>
 
 #include "SimulationState.h"
 
@@ -218,6 +220,19 @@ void Printing(
 
 
     fclose(F);
+
+    // Keep the plotting geometry with the field rather than duplicating it
+    // in Python settings. The field's two-line header remains unchanged.
+    const auto metadataFile = outputDirectory / "DSMC2D_Field.json";
+    std::ofstream metadata(metadataFile);
+    metadata << std::setprecision(17)
+             << "{\n  \"obstacle\": {\"type\": \"box\", \"center\": ["
+             << BoxX << ", " << BoxY << "], \"width\": " << BoxWidth
+             << ", \"height\": " << BoxHeight << "},\n"
+             << "  \"angle_of_attack_degrees\": " << AttackAngle << "\n}\n";
+    metadata.close();
+    if (!metadata)
+        std::cerr << "ERROR: Could not write " << metadataFile.string() << '\n';
 
     std::cout
         << "Global field written to "

@@ -2,6 +2,8 @@
 #include <iostream>
 #include <cstring>
 #include <cmath>
+#include <algorithm>
+#include <limits>
 
 #include "SimulationState.h"
 
@@ -15,10 +17,11 @@ int NX = 100;
 int NY = 100;
 double DL = 0.1;
 
-// Circular obstacle geometry.
-double SphereX = 0.0;
-double SphereY = 0.0;
-double SphereRadius = 3;
+// Axis-aligned rectangular obstacle geometry.
+double BoxX = 0.0;
+double BoxY = 0.0;
+double BoxWidth = 2.0;
+double BoxHeight = 2.0;
 
 // Derived cell dimensions and volume, calculated during setup.
 double DX, DY;
@@ -167,20 +170,69 @@ void Indexing()
 }
 
 
-bool InsideSphere(double x, double y)
+bool InsideBox(double x, double y)
 {
-    double dx = x - SphereX;
-    double dy = y - SphereY;
-
-    return dx*dx + dy*dy
-           < SphereRadius*SphereRadius;
+    return std::abs(x - BoxX) < BoxWidth / 2.0
+        && std::abs(y - BoxY) < BoxHeight / 2.0;
 }
 
-void RemoveParticlesInsideSphere()
+bool IntersectBox(double x, double y, double dx, double dy,
+                  double &tHit, double &normalX, double &normalY)
+{
+    const double position[2] = {x, y};
+    const double displacement[2] = {dx, dy};
+    const double lower[2] = {BoxX - BoxWidth / 2.0, BoxY - BoxHeight / 2.0};
+    const double upper[2] = {BoxX + BoxWidth / 2.0, BoxY + BoxHeight / 2.0};
+
+    double entry = -std::numeric_limits<double>::infinity();
+    double exit = std::numeric_limits<double>::infinity();
+    int faceAxis = -1;
+    double faceNormal = 0.0;
+
+    // Intersect the time intervals for the x and y slabs. A segment that
+    // only touches an edge or corner does not enter the solid interior.
+    for (int axis = 0; axis < 2; ++axis)
+    {
+        if (displacement[axis] == 0.0)
+        {
+            if (position[axis] <= lower[axis] || position[axis] >= upper[axis])
+                return false;
+            continue;
+        }
+
+        double near = (lower[axis] - position[axis]) / displacement[axis];
+        double far = (upper[axis] - position[axis]) / displacement[axis];
+        double normal = -1.0;
+        if (near > far)
+        {
+            std::swap(near, far);
+            normal = 1.0;
+        }
+
+        // Resolve an exact corner entry consistently in favour of the x face.
+        if (near > entry)
+        {
+            entry = near;
+            faceAxis = axis;
+            faceNormal = normal;
+        }
+        exit = std::min(exit, far);
+    }
+
+    if (faceAxis < 0 || entry < 0.0 || entry > 1.0 || entry >= exit)
+        return false;
+
+    tHit = entry;
+    normalX = faceAxis == 0 ? faceNormal : 0.0;
+    normalY = faceAxis == 1 ? faceNormal : 0.0;
+    return true;
+}
+
+void RemoveParticlesInsideBox()
 {
     for (int i = 0; i < NP;)
     {
-        if (InsideSphere(P[i].X[0], P[i].X[1]))
+        if (InsideBox(P[i].X[0], P[i].X[1]))
         {
             if (i < NP - 1)
                 P[i] = P[NP - 1];

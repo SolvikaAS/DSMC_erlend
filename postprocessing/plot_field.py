@@ -1,10 +1,9 @@
-from plot_cli import parse_args, finish_figure
+from plot_cli import parse_args, finish_figure, read_run_metadata
 
 args = parse_args("Plot DSMC density, temperature, pressure, and velocity fields.")
 
 import numpy as np
 import matplotlib.pyplot as plt
-from matplotlib.patches import Circle
 from scipy.interpolate import griddata
 
 
@@ -21,12 +20,18 @@ mesh_step = 1
 
 
 # ============================================================
-# Geometry from DSMC code
+# Geometry saved with the DSMC field
 # ============================================================
 
-SphereX = 0.0
-SphereY = 0.0
-SphereRadius = 3
+metadata = read_run_metadata(filename)
+obstacle = metadata["obstacle"]
+if obstacle["type"] != "box":
+    raise ValueError("This plotting script expects a box obstacle.")
+BoxX, BoxY = obstacle["center"]
+BoxWidth = obstacle["width"]
+BoxHeight = obstacle["height"]
+if "angle_of_attack_degrees" in metadata:
+    print(f"Angle of attack: {metadata['angle_of_attack_degrees']:g} degrees")
 
 
 # ============================================================
@@ -134,11 +139,8 @@ Tgrid  = make_grid(T)
 # ============================================================
 
 body_mask = (
-    (Xgrid - SphereX)**2
-    +
-    (Ygrid - SphereY)**2
-    <=
-    SphereRadius**2
+    (np.abs(Xgrid - BoxX) <= BoxWidth / 2)
+    & (np.abs(Ygrid - BoxY) <= BoxHeight / 2)
 )
 
 
@@ -254,24 +256,6 @@ def add_mesh(ax):
 
 
 # ============================================================
-# Geometry
-# ============================================================
-
-def add_geometry(ax):
-
-    body = Circle(
-        (SphereX, SphereY),
-        SphereRadius,
-        facecolor="black",
-        edgecolor="white",
-        linewidth=1.5,
-        zorder=20
-    )
-
-    ax.add_patch(body)
-
-
-# ============================================================
 # Generic field plotting function
 # ============================================================
 
@@ -332,7 +316,8 @@ def field_plot(
         plot_field,
         levels=levels,
         cmap=cmap,
-        extend="both"
+        extend="both",
+        corner_mask=False  # Preserve square corners at masked grid cells.
     )
 
     # --------------------------------------------------------
@@ -355,12 +340,6 @@ def field_plot(
         cbar_label,
         fontsize=12
     )
-
-    # --------------------------------------------------------
-    # Body
-    # --------------------------------------------------------
-
-    add_geometry(ax)
 
     # --------------------------------------------------------
     # Axes
@@ -507,7 +486,8 @@ contour = ax.contourf(
     plot_U,
     levels=levels,
     cmap="plasma",
-    extend="both"
+    extend="both",
+    corner_mask=False
 )
 
 
@@ -568,13 +548,6 @@ ax.quiver(
     scale=None,
     width=0.002
 )
-
-
-# ============================================================
-# Add cylinder
-# ============================================================
-
-add_geometry(ax)
 
 
 # ============================================================

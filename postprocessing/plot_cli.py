@@ -1,8 +1,20 @@
 """Shared command-line options and figure output for DSMC plotting scripts."""
 
 import argparse
+import json
 from pathlib import Path
 import re
+
+
+def read_run_metadata(filename):
+    """Read geometry saved beside the field; use the default box for older files."""
+    metadata_file = filename.with_suffix(".json")
+    if metadata_file.is_file():
+        with metadata_file.open() as stream:
+            return json.load(stream)
+    return {
+        "obstacle": {"type": "box", "center": [0.0, 0.0], "width": 6.0, "height": 6.0},
+    }
 
 
 def parse_args(description, *, x_slice=False):

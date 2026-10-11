@@ -199,137 +199,34 @@ void DiffuseScattering(
 
 void MoveParticles()
 {
-    for (int i = 0; i < NP; i++)
+    for (int i = 0; i < NP; ++i)
     {
-        // --------------------------------------------
-        // Old particle position
-        // --------------------------------------------
+        const double x0 = P[i].X[0];
+        const double y0 = P[i].X[1];
+        const double dx = Dt * P[i].V[0];
+        const double dy = Dt * P[i].V[1];
+        double tHit, normalX, normalY;
 
-        double X0 = P[i].X[0];
-        double Y0 = P[i].X[1];
-
-        // --------------------------------------------
-        // Proposed new particle position
-        // --------------------------------------------
-
-        double Xnew = X0 + Dt * P[i].V[0];
-        double Ynew = Y0 + Dt * P[i].V[1];
-
-        // Particle displacement during timestep
-        double dx = Xnew - X0;
-        double dy = Ynew - Y0;
-
-        // Vector from sphere center to old position
-        double fx = X0 - SphereX;
-        double fy = Y0 - SphereY;
-
-        // --------------------------------------------
-        // Line-circle intersection
-        //
-        // |P0 + t*d - C|^2 = R^2
-        //
-        // 0 <= t <= 1 means collision occurred
-        // during this timestep.
-        // --------------------------------------------
-
-        double a = dx*dx + dy*dy;
-        double b = 2.0 * (fx*dx + fy*dy);
-        double c = fx*fx + fy*fy
-                 - SphereRadius*SphereRadius;
-
-        double discriminant = b*b - 4.0*a*c;
-
-        bool collision = false;
-        double tHit = 1.0;
-
-        if (discriminant >= 0.0 && a > 0.0)
+        if (!IntersectBox(x0, y0, dx, dy, tHit, normalX, normalY))
         {
-            double sqrtD = sqrt(discriminant);
-
-            double t1 = (-b - sqrtD) / (2.0*a);
-            double t2 = (-b + sqrtD) / (2.0*a);
-
-            // First intersection encountered
-            if (t1 >= 0.0 && t1 <= 1.0)
-            {
-                tHit = t1;
-                collision = true;
-            }
-            else if (t2 >= 0.0 && t2 <= 1.0)
-            {
-                tHit = t2;
-                collision = true;
-            }
-        }
-
-        // --------------------------------------------
-        // No collision
-        // --------------------------------------------
-
-        if (!collision)
-        {
-            P[i].X[0] = Xnew;
-            P[i].X[1] = Ynew;
+            P[i].X[0] = x0 + dx;
+            P[i].X[1] = y0 + dy;
             continue;
         }
 
-        // --------------------------------------------
-        // Collision position
-        // --------------------------------------------
+        const double xHit = x0 + tHit * dx;
+        const double yHit = y0 + tHit * dy;
+        const double vxIn = P[i].V[0];
 
-        double Xhit = X0 + tHit * dx;
-        double Yhit = Y0 + tHit * dy;
+        DiffuseScattering(P[i].V, MoleculeMass, Tw, normalX, normalY);
+        DragImpulseTotal += Weight * MoleculeMass * (vxIn - P[i].V[0]);
+        ++DragCollisionCount;
 
-        // --------------------------------------------
-        // Surface normal
-        // --------------------------------------------
-
-        double Nx = (Xhit - SphereX) / SphereRadius;
-        double Ny = (Yhit - SphereY) / SphereRadius;
-
-        // Numerical normalization
-        double Nmag = sqrt(Nx*Nx + Ny*Ny);
-
-        Nx /= Nmag;
-        Ny /= Nmag;
-
-        // --------------------------------------------
-        // Diffuse reflection
-        // --------------------------------------------
-
-	double VxIn = P[i].V[0];
-	double VyIn = P[i].V[1];
-	double VzIn = P[i].V[2];
-
-        DiffuseScattering(
-            P[i].V,
-            MoleculeMass,
-            Tw,
-            Nx,
-            Ny
-        );
-
-	double VxOut = P[i].V[0];
-	DragImpulseTotal += Weight*MoleculeMass*(VxIn-VxOut);
-	DragCollisionCount++;
-
-        // --------------------------------------------
-        // Remaining fraction of timestep
-        // --------------------------------------------
-
-        double DtRemaining = Dt * (1.0 - tHit);
-
-        P[i].X[0] =
-            Xhit + DtRemaining * P[i].V[0];
-
-        P[i].X[1] =
-            Yhit + DtRemaining * P[i].V[1];
-
-        // Tiny displacement away from surface to avoid
-        // numerical re-collision at exactly R
+        // The outgoing normal velocity keeps the rest of the trajectory
+        // outside this convex box, including after a corner entry.
+        const double remainingTime = Dt * (1.0 - tHit);
         constexpr double epsilon = 1e-12;
-
-        P[i].X[0] += epsilon * Nx;
-        P[i].X[1] += epsilon * Ny;
+        P[i].X[0] = xHit + remainingTime * P[i].V[0] + epsilon * normalX;
+        P[i].X[1] = yHit + remainingTime * P[i].V[1] + epsilon * normalY;
     }
 }

@@ -1,7 +1,7 @@
 # DSMC_erlend
 
-A Direct Simulation Monte Carlo (DSMC) solver for gas flow around a circular
-obstacle. The solver uses two spatial coordinates and three velocity components,
+A Direct Simulation Monte Carlo (DSMC) solver for gas flow around an axis-aligned
+box obstacle. The solver uses two spatial coordinates and three velocity components,
 with MPI domain decomposition for parallel runs.
 
 Particles move through a Cartesian grid, undergo binary elastic collisions, and
@@ -48,6 +48,17 @@ Or run with four processes:
 mpiexec -n 4 ./build/dsmc
 ```
 
+Set the angle of attack in degrees without rebuilding:
+
+```bash
+mpirun -np 4 ./build/dsmc --angle-of-attack 15
+```
+
+`--aoa` is an alias for `--angle-of-attack`. Accepted angles range from -180 to
+180 degrees. At zero degrees the freestream flows toward positive x; positive
+angles tilt it toward negative y. The box stays aligned with the grid. Use
+`./build/dsmc --help` to see the options.
+
 MPI automatically divides the grid into a two-dimensional process layout.
 Progress messages report the time step, total particle count, and collision
 count every 100 steps. Each process uses a time-based random seed, so repeated
@@ -58,7 +69,8 @@ runs need not produce identical results.
 Time, gas, and sampling settings are defined near the top of
 `src/Initialization.cpp`. Domain bounds, grid dimensions, and obstacle geometry
 are defined in `src/Geometry.cpp`. Edit these settings and rebuild to change the
-simulation; there is no simulation input file or command-line parameter interface.
+simulation. The flow angle can also be set with `--angle-of-attack`; other
+parameters currently require editing the source.
 
 | Setting | Default | Meaning |
 | --- | --- | --- |
@@ -71,7 +83,9 @@ simulation; there is no simulation input file or command-line parameter interfac
 | `DZ` | `0.1` m | Thickness used to calculate cell volume |
 | `NPCFree` | `10` | Target freestream simulation particles per cell |
 | `MaFree`, `NFree`, `TFree` | `4`, `1e18` m⁻³, `200` K | Freestream Mach number, number density, and temperature |
-| `SphereX`, `SphereY`, `SphereRadius` | `0`, `0`, `3` m | Circular obstacle centre and radius |
+| `BoxX`, `BoxY` | `0`, `0` m | Box centre |
+| `BoxWidth`, `BoxHeight` | `2`, `2` m | Box dimensions along x and y |
+| `AttackAngle` | `0` degrees | Default flow angle, overridden by `--angle-of-attack` |
 | `Tw` | `300` K | Wall temperature |
 
 Array capacities are defined in `include/Constants.h`. The solver retains shared
@@ -90,6 +104,12 @@ The destination is the source project's `results/` directory, recorded by CMake
 at configuration time. It does not depend on the working directory used to
 launch the executable. The solver creates the directory if needed and overwrites
 the field file on each completed run. Copy or rename the file to preserve a run.
+
+`results/DSMC2D_Field.json` records the box geometry and angle of attack. Keep
+this file alongside the field when archiving a run, using the same basename
+(for example, `run1.plt` and `run1.json`). Field plots read this metadata
+automatically. The Knudsen number reported during setup uses `BoxHeight` as
+the reference length.
 
 The file contains two header lines followed by these columns:
 
@@ -138,9 +158,21 @@ python postprocessing/plot_x.py results/run1/DSMC2D_Field.plt --x -5 --output-di
 On a machine without a graphical display, prefix a plotting command with
 `MPLBACKEND=Agg` and use `--output-dir`.
 
-The obstacle position and radius used for plotting are defined separately in
-`postprocessing/plot_field.py`. Update them when changing the solver geometry.
+The field plot masks the obstacle interior using the saved JSON metadata without
+drawing a box overlay. If metadata
+is absent, it assumes the default 6 m × 6 m box at the origin. Old circular-obstacle
+results should be plotted with the earlier plotting script; generate a new run
+for the box geometry.
 Use `--help` on either script to see its options.
+
+## Tests
+
+The build includes checks for face and corner intersections, grazing trajectories,
+initial particle exclusion, flow-angle calculations, and outgoing wall reflections:
+
+```bash
+ctest --test-dir build --output-on-failure
+```
 
 ## Project layout
 
@@ -151,6 +183,7 @@ DSMC_erlend/
 ├── src/              # Entry point and solver implementations
 ├── rng/              # Random number generators
 ├── postprocessing/   # Python plotting scripts and requirements
+├── tests/            # Geometry and wall-reflection checks
 ├── results/          # Generated field data and plots
 ├── build/            # Generated build files and executable
 └── .vscode/          # IntelliSense configuration
@@ -165,7 +198,9 @@ DSMC_erlend/
 | `Collision` | Binary collision selection and elastic scattering |
 | `Sampling` | Accumulate moments and write field output |
 | `MPIManager` | Domain decomposition, particle exchange, and field gathering |
-| `Gamma` | Mathematical Gamma function used during setup |
+
+The mathematical Gamma function used during setup is a private helper in
+`src/Initialization.cpp`.
 
 ## VS Code
 
