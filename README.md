@@ -5,7 +5,7 @@ box obstacle. The solver uses two spatial coordinates and three velocity compone
 with MPI domain decomposition for parallel runs.
 
 Particles move through a Cartesian grid, undergo binary elastic collisions, and
-reflect diffusely from the obstacle surface. Sampled particle moments provide
+reflect diffusely or specularly from the obstacle surface. Sampled particle moments provide
 number density, bulk velocity, and translational temperature fields.
 
 ## Requirements
@@ -59,6 +59,18 @@ mpirun -np 4 ./build/dsmc --angle-of-attack 15
 angles tilt it toward negative y. The box stays aligned with the grid. Use
 `./build/dsmc --help` to see the options.
 
+Choose the wall interaction near the top of `src/Boundary.cpp`, then rebuild:
+
+```cpp
+WallModel WallInteraction = WallModel::Specular;
+```
+
+Specular reflection is the default. Use `WallModel::Diffuse` to select diffuse
+reflection. Diffuse reflection samples outgoing
+velocities at the wall temperature `Tw`. Specular reflection from the stationary
+box reverses the normal velocity and preserves tangential velocity and kinetic
+energy; it does not use `Tw`.
+
 MPI automatically divides the grid into a two-dimensional process layout.
 Progress messages report the time step, total particle count, and collision
 count every 100 steps. Each process uses a time-based random seed, so repeated
@@ -105,7 +117,7 @@ at configuration time. It does not depend on the working directory used to
 launch the executable. The solver creates the directory if needed and overwrites
 the field file on each completed run. Copy or rename the file to preserve a run.
 
-`results/DSMC2D_Field.json` records the box geometry and angle of attack. Keep
+`results/DSMC2D_Field.json` records the box geometry, angle of attack, and wall model. Keep
 this file alongside the field when archiving a run, using the same basename
 (for example, `run1.plt` and `run1.json`). Field plots read this metadata
 automatically. The Knudsen number reported during setup uses `BoxHeight` as

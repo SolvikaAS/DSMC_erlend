@@ -86,6 +86,37 @@ int main()
     RemoveParticlesInsideBox();
     Check(NP == 1 && P[0].X[0] == 4, "Initial interior particles must be removed");
 
+    // Check specular invariants with a non-axis-aligned unit normal.
+    const double diagonal = std::sqrt(0.5);
+    double velocity[3] = {-3, -4, 5};
+    const double incomingNormal = (velocity[0] + velocity[1]) * diagonal;
+    const double incomingTangent = (-velocity[0] + velocity[1]) * diagonal;
+    SpecularScattering(velocity, diagonal, diagonal);
+    Check(std::abs((velocity[0] + velocity[1]) * diagonal + incomingNormal) < 1e-12,
+          "Specular normal velocity was not reversed");
+    Check(std::abs((-velocity[0] + velocity[1]) * diagonal - incomingTangent) < 1e-12,
+          "Specular tangential velocity changed");
+    Check(velocity[2] == 5, "Specular z velocity changed");
+    Check(std::abs(velocity[0]*velocity[0] + velocity[1]*velocity[1]
+                   + velocity[2]*velocity[2] - 50) < 1e-12,
+          "Specular kinetic energy changed");
+
+    WallInteraction = WallModel::Specular;
+    Dt = 0.002;
+    NP = 1;
+    P[0] = {{-4, 0}, {1000, 100, 50}};
+    DragCollisionCount = 0;
+    DragImpulseTotal = 0;
+    MoveParticles();
+    Check(P[0].V[0] == -1000 && P[0].V[1] == 100 && P[0].V[2] == 50,
+          "Specular wall model was not applied during particle motion");
+    Check(std::abs(P[0].X[0] + 4) < 2e-12 && std::abs(P[0].X[1] - 0.2) < 1e-12,
+          "Specular post-impact position is incorrect");
+    Check(DragCollisionCount == 1, "Specular impact count is incorrect");
+    Check(std::abs(DragImpulseTotal / (Weight * MoleculeMass) - 2000) < 1e-10,
+          "Specular momentum transfer is incorrect");
+
+    WallInteraction = WallModel::Diffuse;
     SetSeed(12345, 67890);
     Dt = 0.002;
     const PCL approaches[] = {

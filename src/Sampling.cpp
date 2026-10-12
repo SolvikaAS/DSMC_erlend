@@ -7,6 +7,7 @@
 #include <iomanip>
 
 #include "SimulationState.h"
+#include "Boundary.h"
 
 #define sqr3( V ) ( V[0] * V[0] + V[1] * V[1] + V[2] * V[2] )
 
@@ -229,7 +230,8 @@ void Printing(
              << "{\n  \"obstacle\": {\"type\": \"box\", \"center\": ["
              << BoxX << ", " << BoxY << "], \"width\": " << BoxWidth
              << ", \"height\": " << BoxHeight << "},\n"
-             << "  \"angle_of_attack_degrees\": " << AttackAngle << "\n}\n";
+             << "  \"angle_of_attack_degrees\": " << AttackAngle << ",\n"
+             << "  \"wall_model\": \"" << WallModelName() << "\"\n}\n";
     metadata.close();
     if (!metadata)
         std::cerr << "ERROR: Could not write " << metadataFile.string() << '\n';

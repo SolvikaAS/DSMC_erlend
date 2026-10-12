@@ -6,6 +6,14 @@
 #include "SimulationState.h"
 #include "RNG.h"
 
+// Select the box wall interaction here and rebuild after changing it.
+WallModel WallInteraction = WallModel::Specular;
+
+const char *WallModelName()
+{
+    return WallInteraction == WallModel::Specular ? "specular" : "diffuse";
+}
+
 void v2rand_uniform_rect (double &X, double &Y, double a, double b, double c,double d){
 	X = a+(b-a)*brng();
 	Y = c+(d-c)*brng();
@@ -197,6 +205,14 @@ void DiffuseScattering(
     v[2] = Vz;
 }
 
+void SpecularScattering(double *v, double Nx, double Ny)
+{
+    const double normalVelocity = v[0] * Nx + v[1] * Ny;
+    v[0] -= 2.0 * normalVelocity * Nx;
+    v[1] -= 2.0 * normalVelocity * Ny;
+    // Tangential velocity, including the z component, is unchanged.
+}
+
 void MoveParticles()
 {
     for (int i = 0; i < NP; ++i)
@@ -218,7 +234,10 @@ void MoveParticles()
         const double yHit = y0 + tHit * dy;
         const double vxIn = P[i].V[0];
 
-        DiffuseScattering(P[i].V, MoleculeMass, Tw, normalX, normalY);
+        if (WallInteraction == WallModel::Specular)
+            SpecularScattering(P[i].V, normalX, normalY);
+        else
+            DiffuseScattering(P[i].V, MoleculeMass, Tw, normalX, normalY);
         DragImpulseTotal += Weight * MoleculeMass * (vxIn - P[i].V[0]);
         ++DragCollisionCount;
 

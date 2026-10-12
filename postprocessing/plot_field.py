@@ -32,6 +32,8 @@ BoxWidth = obstacle["width"]
 BoxHeight = obstacle["height"]
 if "angle_of_attack_degrees" in metadata:
     print(f"Angle of attack: {metadata['angle_of_attack_degrees']:g} degrees")
+if "wall_model" in metadata:
+    print(f"Wall model: {metadata['wall_model']}")
 
 
 # ============================================================

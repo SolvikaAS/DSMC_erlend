@@ -259,6 +259,7 @@ std::cout << "\n";
 std::cout << "Freestream properties\n";
 std::cout << "-----------------------------\n";
 std::cout << "Box size    = " << BoxWidth << " x " << BoxHeight << " m\n";
+std::cout << "Wall model  = " << WallModelName() << '\n';
 std::cout << "Angle       = " << AttackAngle << " degrees\n";
 std::cout << "P_inf       = " << PFree << " Pa\n";
 std::cout << "U_inf       = " << UFree << " m/s\n";
