@@ -34,6 +34,8 @@ if "angle_of_attack_degrees" in metadata:
     print(f"Angle of attack: {metadata['angle_of_attack_degrees']:g} degrees")
 if "wall_model" in metadata:
     print(f"Wall model: {metadata['wall_model']}")
+if "cll_accommodation" in metadata:
+    print(f"CLL accommodation: {metadata['cll_accommodation']}")
 
 
 # ============================================================
@@ -487,7 +489,7 @@ contour = ax.contourf(
     Ygrid,
     plot_U,
     levels=levels,
-    cmap="plasma",
+    cmap="jet",
     extend="both",
     corner_mask=False
 )

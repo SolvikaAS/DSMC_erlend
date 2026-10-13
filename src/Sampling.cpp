@@ -61,8 +61,9 @@ void Printing(
     }
 
 
-    const std::filesystem::path outputDirectory = DSMC_RESULTS_DIRECTORY;
-    const std::filesystem::path outputFile = outputDirectory / "DSMC2D_Field.plt";
+    const std::filesystem::path outputDirectory =
+        std::filesystem::path(DSMC_RESULTS_DIRECTORY) / WallModelName();
+    const auto outputFile = outputDirectory / "DSMC2D_Field.plt";
 
     std::error_code directoryError;
     std::filesystem::create_directories(outputDirectory, directoryError);
@@ -220,7 +221,12 @@ void Printing(
     }
 
 
-    fclose(F);
+    const bool fieldError = ferror(F) != 0;
+    if (fclose(F) != 0 || fieldError)
+    {
+        std::cerr << "ERROR: Could not finish writing " << outputFile.string() << '\n';
+        return;
+    }
 
     // Keep the plotting geometry with the field rather than duplicating it
     // in Python settings. The field's two-line header remains unchanged.
@@ -231,10 +237,30 @@ void Printing(
              << BoxX << ", " << BoxY << "], \"width\": " << BoxWidth
              << ", \"height\": " << BoxHeight << "},\n"
              << "  \"angle_of_attack_degrees\": " << AttackAngle << ",\n"
-             << "  \"wall_model\": \"" << WallModelName() << "\"\n}\n";
+             << "  \"wall_model\": \"" << WallModelName() << "\",\n"
+             << "  \"freestream\": {\"number_density\": " << NFree
+             << ", \"temperature\": " << TFree << ", \"mach\": " << MaFree
+             << ", \"molar_mass\": " << MolarMass << "},\n"
+             << "  \"grid\": {\"nx\": " << NX << ", \"ny\": " << NY
+             << ", \"bounds\": [" << X1 << ", " << X2 << ", " << Y1 << ", " << Y2
+             << "], \"thickness\": " << DZ << "},\n"
+             << "  \"sampling\": {\"dt\": " << Dt << ", \"steps\": " << NStep
+             << ", \"first_step\": " << FirstSamplingStep << ", \"period\": "
+             << SamplingPeriod << ", \"particles_per_cell\": " << NPCFree << "},\n"
+             << "  \"collision_model\": {\"reference_diameter\": " << DRef
+             << ", \"viscosity_index\": " << ViscosityIndex
+             << ", \"reference_temperature\": " << Tref << "},\n"
+             << "  \"wall_temperature\": " << Tw;
+    if (WallInteraction == WallModel::CLL)
+        metadata << ",\n  \"cll_accommodation\": {\"normal\": " << CLLNormalAccommodation
+                 << ", \"tangential\": " << CLLTangentialAccommodation << "}";
+    metadata << "\n}\n";
     metadata.close();
     if (!metadata)
+    {
         std::cerr << "ERROR: Could not write " << metadataFile.string() << '\n';
+        return;
+    }
 
     std::cout
         << "Global field written to "

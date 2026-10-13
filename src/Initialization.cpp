@@ -16,7 +16,7 @@ int PrintPeriod = 10000;
 double NPCFree = 10;
 double MolarMass = 0.040;
 double MaFree = 4;
-double NFree = 1e18;
+double NFree = 1e17;
 double TFree = 200;
 double AttackAngle = 0;
 double Tw = 300.0;
@@ -208,6 +208,16 @@ const   double gamma = 0.577215664901532860606512090; // Euler's gamma constant
 } // namespace
 
 void Setup(){
+    if (WallInteraction == WallModel::CLL
+        && (!std::isfinite(CLLNormalAccommodation) || CLLNormalAccommodation < 0.0
+            || CLLNormalAccommodation > 1.0 || !std::isfinite(CLLTangentialAccommodation)
+            || CLLTangentialAccommodation < 0.0 || CLLTangentialAccommodation > 1.0))
+    {
+        if (MPIRank == 0)
+            std::cerr << "ERROR: CLL accommodation coefficients must be in [0, 1]\n";
+        MPI_Abort(MPI_COMM_WORLD, 40);
+        return;
+    }
 	MoleculeMass =MolarMass/AVOGADRO_CONSTANT;
 	PFree= NFree*(BOLTZMANN_CONSTANT*TFree);
 	UFree = MaFree*sqrt((5.0/3.0)*BOLTZMANN_CONSTANT*TFree/MoleculeMass);
@@ -255,20 +265,26 @@ KnFree =
     MFPFree / BoxHeight;
 
 
-std::cout << "\n";
-std::cout << "Freestream properties\n";
-std::cout << "-----------------------------\n";
-std::cout << "Box size    = " << BoxWidth << " x " << BoxHeight << " m\n";
-std::cout << "Wall model  = " << WallModelName() << '\n';
-std::cout << "Angle       = " << AttackAngle << " degrees\n";
-std::cout << "P_inf       = " << PFree << " Pa\n";
-std::cout << "U_inf       = " << UFree << " m/s\n";
-std::cout << "MFT_inf     = " << MFTFree << " s\n";
-std::cout << "MFP_inf     = " << MFPFree << " m\n";
-std::cout << "Kn_inf      = " << KnFree << "\n";
-std::cout << "DX / lambda = " << DX / MFPFree << "\n";
-std::cout << "DY / lambda = " << DY / MFPFree << "\n";
-std::cout << "Dt / MFT    = " << Dt / MFTFree << "\n";
+if (MPIRank == 0)
+{
+    std::cout << "\n";
+    std::cout << "Freestream properties\n";
+    std::cout << "-----------------------------\n";
+    std::cout << "Box size    = " << BoxWidth << " x " << BoxHeight << " m\n";
+    std::cout << "Wall model  = " << WallModelName() << '\n';
+    if (WallInteraction == WallModel::CLL)
+        std::cout << "CLL normal  = " << CLLNormalAccommodation << '\n'
+                  << "CLL tangent = " << CLLTangentialAccommodation << '\n';
+    std::cout << "Angle       = " << AttackAngle << " degrees\n";
+    std::cout << "P_inf       = " << PFree << " Pa\n";
+    std::cout << "U_inf       = " << UFree << " m/s\n";
+    std::cout << "MFT_inf     = " << MFTFree << " s\n";
+    std::cout << "MFP_inf     = " << MFPFree << " m\n";
+    std::cout << "Kn_inf      = " << KnFree << "\n";
+    std::cout << "DX / lambda = " << DX / MFPFree << "\n";
+    std::cout << "DY / lambda = " << DY / MFPFree << "\n";
+    std::cout << "Dt / MFT    = " << Dt / MFTFree << "\n";
+}
 }
 
 void InitialConditions()

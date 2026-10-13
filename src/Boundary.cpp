@@ -2,16 +2,43 @@
 #include <iostream>
 #include <cstdlib>
 #include <cmath>
+#include <stdexcept>
 
 #include "SimulationState.h"
 #include "RNG.h"
 
 // Select the box wall interaction here and rebuild after changing it.
-WallModel WallInteraction = WallModel::Specular;
+WallModel WallInteraction = WallModel::CLL;
+double CLLNormalAccommodation = 0.8;
+double CLLTangentialAccommodation = 0.8;
 
 const char *WallModelName()
 {
-    return WallInteraction == WallModel::Specular ? "specular" : "diffuse";
+    switch (WallInteraction)
+    {
+        case WallModel::Specular: return "specular";
+        case WallModel::Diffuse: return "diffuse";
+        case WallModel::CLL: return "cll";
+    }
+    throw std::invalid_argument("Unknown wall model");
+}
+
+namespace {
+void SampleGaussianPair(double variance, double &first, double &second)
+{
+    if (variance == 0.0)
+    {
+        first = second = 0.0;
+        return;
+    }
+    // The base RNG may reach an endpoint; logarithms require an open interval.
+    double uniform;
+    do { uniform = brng(); } while (uniform <= 0.0 || uniform >= 1.0);
+    const double radius = std::sqrt(-2.0 * variance * std::log(uniform));
+    const double angle = 2.0 * M_PI * brng();
+    first = radius * std::cos(angle);
+    second = radius * std::sin(angle);
+}
 }
 
 void v2rand_uniform_rect (double &X, double &Y, double a, double b, double c,double d){
@@ -45,7 +72,7 @@ void GenerateNewParticles (double X1, double Y1, double X2, double Y2,double Nga
 
 	if (NP + Nnew > MAX_PCL)
     {
-        std::cerr << "ERROR: Particle array capacity exceeded\n";
+        std::cerr << "Rank " << MPIRank << ": Particle array capacity exceeded\n";
         std::cerr << "NP = " << NP << '\n';
         std::cerr << "Nnew = " << Nnew << '\n';
         std::cerr << "MAX_PCL = " << MAX_PCL << '\n';
@@ -213,6 +240,47 @@ void SpecularScattering(double *v, double Nx, double Ny)
     // Tangential velocity, including the z component, is unchanged.
 }
 
+void CLLScattering(double *v, double m, double wallTemperature,
+                   double Nx, double Ny, double normalAccommodation,
+                   double tangentialAccommodation)
+{
+    if (!std::isfinite(normalAccommodation) || normalAccommodation < 0.0
+        || normalAccommodation > 1.0 || !std::isfinite(tangentialAccommodation)
+        || tangentialAccommodation < 0.0 || tangentialAccommodation > 1.0)
+        throw std::invalid_argument("CLL accommodation coefficients must be in [0, 1]");
+
+    if (normalAccommodation == 0.0 && tangentialAccommodation == 0.0)
+    {
+        SpecularScattering(v, Nx, Ny);
+        return;
+    }
+
+    const double thermalVariance = BOLTZMANN_CONSTANT * wallTemperature / m;
+    const double incomingNormal = v[0] * Nx + v[1] * Ny;
+    const double Tx = -Ny;
+    const double Ty = Nx;
+    const double incomingTangent = v[0] * Tx + v[1] * Ty;
+    const double incomingZ = v[2];
+
+    // Rice-distributed normal speed: a retained incident component plus two
+    // independent thermal Gaussian components. The speed is always outward.
+    double normalNoise1, normalNoise2;
+    SampleGaussianPair(normalAccommodation * thermalVariance, normalNoise1, normalNoise2);
+    const double retainedNormal = std::sqrt(1.0 - normalAccommodation)
+                                  * std::abs(incomingNormal);
+    const double outgoingNormal = std::hypot(retainedNormal + normalNoise1, normalNoise2);
+
+    // Fixed orthonormal tangent directions are equivalent to SPARTA's basis
+    // aligned with incident tangential velocity, since the noise is isotropic.
+    double tangentNoise, zNoise;
+    SampleGaussianPair(tangentialAccommodation * thermalVariance, tangentNoise, zNoise);
+    const double retainedTangent = std::sqrt(1.0 - tangentialAccommodation);
+    const double outgoingTangent = retainedTangent * incomingTangent + tangentNoise;
+    v[0] = outgoingNormal * Nx + outgoingTangent * Tx;
+    v[1] = outgoingNormal * Ny + outgoingTangent * Ty;
+    v[2] = retainedTangent * incomingZ + zNoise;
+}
+
 void MoveParticles()
 {
     for (int i = 0; i < NP; ++i)
@@ -234,10 +302,19 @@ void MoveParticles()
         const double yHit = y0 + tHit * dy;
         const double vxIn = P[i].V[0];
 
-        if (WallInteraction == WallModel::Specular)
-            SpecularScattering(P[i].V, normalX, normalY);
-        else
-            DiffuseScattering(P[i].V, MoleculeMass, Tw, normalX, normalY);
+        switch (WallInteraction)
+        {
+            case WallModel::Specular:
+                SpecularScattering(P[i].V, normalX, normalY);
+                break;
+            case WallModel::Diffuse:
+                DiffuseScattering(P[i].V, MoleculeMass, Tw, normalX, normalY);
+                break;
+            case WallModel::CLL:
+                CLLScattering(P[i].V, MoleculeMass, Tw, normalX, normalY,
+                              CLLNormalAccommodation, CLLTangentialAccommodation);
+                break;
+        }
         DragImpulseTotal += Weight * MoleculeMass * (vxIn - P[i].V[0]);
         ++DragCollisionCount;
 

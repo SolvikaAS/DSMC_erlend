@@ -20,8 +20,8 @@ double DL = 0.1;
 // Axis-aligned rectangular obstacle geometry.
 double BoxX = 0.0;
 double BoxY = 0.0;
-double BoxWidth = 2.0;
-double BoxHeight = 2.0;
+double BoxWidth = 4.0;
+double BoxHeight = 4.0;
 
 // Derived cell dimensions and volume, calculated during setup.
 double DX, DY;

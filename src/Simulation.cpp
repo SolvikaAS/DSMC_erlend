@@ -90,7 +90,8 @@ int RunSimulation(int argc, char **argv)
     );
 
 	Setup();
-	std::cout<<"Setup \n";
+    if (MPIRank == 0)
+        std::cout << "Setup\n";
 	SetupMPIDomain();
 
 	/*
@@ -111,11 +112,6 @@ int RunSimulation(int argc, char **argv)
 	*/
 
 	InitialConditions();
-	std::cout
-    << "Rank " << MPIRank
-    << " initial particles = "
-    << NP
-    << '\n';
 
     int GlobalNP = 0;
 
@@ -134,11 +130,11 @@ int RunSimulation(int argc, char **argv)
         std::cout
             << "Total particles across all ranks = "
             << GlobalNP
-            << '\n';
+            << '\n'
+            << "InitialConditions\n";
     }
 
 
-	std::cout<<"InitialConditions \n";
 	do {
 		if (Step > FirstSamplingStep && Step % SamplingPeriod ==0)
 			SamplingMode =1;
@@ -216,29 +212,29 @@ int RunSimulation(int argc, char **argv)
 	double MeanDrag =
     DragImpulseTotal / DragSamplingTime;
 
-double RhoFree = NFree * MoleculeMass;
-double AreaRef = BoxHeight * DZ;
+    double RhoFree = NFree * MoleculeMass;
+    double AreaRef = BoxHeight * DZ;
 
-double Cd =
-    MeanDrag /
-    (0.5 * RhoFree * UFree * UFree * AreaRef);
+    double Cd =
+        MeanDrag /
+        (0.5 * RhoFree * UFree * UFree * AreaRef);
 
-std::cout << "\n";
-std::cout << "====================================\n";
-std::cout << "Box collisions = "
-          << DragCollisionCount << "\n";
+    std::cout << "\n";
+    std::cout << "====================================\n";
+    std::cout << "Box collisions = "
+            << DragCollisionCount << "\n";
 
-std::cout << "Sampling time = "
-          << DragSamplingTime << " s\n";
+    std::cout << "Sampling time = "
+            << DragSamplingTime << " s\n";
 
-std::cout << "Mean drag force = "
-          << MeanDrag << " N\n";
+    std::cout << "Mean drag force = "
+            << MeanDrag << " N\n";
 
-std::cout << "Drag coefficient Cd = "
-          << Cd << "\n";
+    std::cout << "Drag coefficient Cd = "
+            << Cd << "\n";
 
-std::cout << "====================================\n";
-*/
+    std::cout << "====================================\n";
+    */
 
 MPI_Type_free(&MPI_PCL);
 MPI_Type_free(&MPI_CELL);
